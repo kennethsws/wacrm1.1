@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 
 export async function POST(
@@ -12,6 +13,7 @@ export async function POST(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await requireRole('agent')
 
   const admin = supabaseAdmin()
   const { data: original, error: origErr } = await admin
@@ -26,6 +28,7 @@ export async function POST(
   const { data: copy, error: copyErr } = await admin
     .from('automations')
     .insert({
+      account_id: ctx.accountId,
       user_id: user.id,
       name: `${original.name} (Copy)`,
       description: original.description,
