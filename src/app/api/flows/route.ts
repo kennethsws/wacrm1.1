@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { requireRole } from '@/lib/auth/account'
 import { getFlowTemplate } from '@/lib/flows/templates'
 
 /**
@@ -45,11 +46,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireUser()
-  if (!guard.ok) {
-    return NextResponse.json(guard.body, { status: guard.status })
-  }
-  const { userId } = guard
+  const ctx = await requireRole('agent')
 
   const body = (await request.json().catch(() => null)) as
     | {
@@ -84,7 +81,8 @@ export async function POST(request: Request) {
     const { data: flow, error: flowErr } = await admin
       .from('flows')
       .insert({
-        user_id: userId,
+        account_id: ctx.accountId,
+        user_id: ctx.userId,
         name: body.name?.trim() || template.name,
         description: template.description,
         status: 'draft',
@@ -132,7 +130,8 @@ export async function POST(request: Request) {
   const { data, error } = await admin
     .from('flows')
     .insert({
-      user_id: userId,
+      account_id: ctx.accountId,
+      user_id: ctx.userId,
       name: body.name.trim(),
       description: body.description ?? null,
       status: 'draft',
