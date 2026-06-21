@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
@@ -45,6 +46,7 @@ const SPEC_DEFAULT_STAGES = [
 
 export default function PipelinesPage() {
   const supabase = createClient();
+  const { accountId, profileLoading } = useAuth();
   const canEditSettings = useCan("edit-settings");
   const canCreateDeals = useCan("send-messages");
 
@@ -106,6 +108,7 @@ export default function PipelinesPage() {
   );
 
   const seedDefaultPipeline = useCallback(async (): Promise<Pipeline | null> => {
+    if (!accountId) return null;
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -114,7 +117,7 @@ export default function PipelinesPage() {
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, name: "Sales Pipeline" })
+      .insert({ account_id: accountId, user_id: user.id, name: "Sales Pipeline" })
       .select()
       .single();
 
@@ -132,7 +135,7 @@ export default function PipelinesPage() {
     await supabase.from("pipeline_stages").insert(stagesPayload);
 
     return pipeline as Pipeline;
-  }, [supabase]);
+  }, [accountId, supabase]);
 
   // Initial load + seed-if-empty
   useEffect(() => {
@@ -141,7 +144,7 @@ export default function PipelinesPage() {
       setLoading(true);
       let list = await loadPipelines();
 
-      if (list.length === 0 && !seedAttempted.current) {
+      if (list.length === 0 && !seedAttempted.current && !profileLoading && accountId) {
         seedAttempted.current = true;
         const seeded = await seedDefaultPipeline();
         if (seeded) list = await loadPipelines();
@@ -161,7 +164,7 @@ export default function PipelinesPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadPipelines, seedDefaultPipeline]);
+  }, [accountId, loadPipelines, profileLoading, seedDefaultPipeline]);
 
   // Load stages + deals whenever selected pipeline changes.
   // Clearing on no-selection is a legitimate sync with URL/prop
@@ -169,10 +172,10 @@ export default function PipelinesPage() {
   // callbacks (not synchronous in the effect body).
   useEffect(() => {
     if (!selectedPipelineId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setStages([]);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDeals([]);
+      queueMicrotask(() => {
+        setStages([]);
+        setDeals([]);
+      });
       return;
     }
     let cancelled = false;
@@ -244,6 +247,10 @@ export default function PipelinesPage() {
   async function handleCreatePipeline() {
     const name = newPipelineName.trim();
     if (!name) return;
+    if (!accountId) {
+      toast.error("Account context is still loading");
+      return;
+    }
     setCreating(true);
 
     const {
@@ -257,7 +264,7 @@ export default function PipelinesPage() {
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, name })
+      .insert({ account_id: accountId, user_id: user.id, name })
       .select()
       .single();
 
